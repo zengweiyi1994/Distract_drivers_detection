@@ -2,23 +2,22 @@ from keras.utils.np_utils import to_categorical
 import tensorflow as tf
 import numpy as np
 import random
-import pickle
 import csv
 import cv2
 import os
+import tensorflow as tf
+from keras import backend as K
 
 BATCH_SIZE = 64
 IMAGE_HEIGHT = 120
 IMAGE_WIDTH = 160
 NUM_EPOCHS_PER_DECAY = 5
 NUM_EXAMPLES_PER_EPOCH_FOR_TRAIN = 1000
-num_batches_per_epoch = NUM_EXAMPLES_PER_EPOCH_FOR_TRAIN / BATCH_SIZE
-decay_steps = int(num_batches_per_epoch * NUM_EPOCHS_PER_DECAY)
 
 TRAIN_DIR = './dataset/train'
 TEST_DIR = './dataset/test'
 META_FILE = './dataset/driver_imgs_list.csv'
-SAMPLE_SIZE = 800
+SAMPLE_RATE = 0.9
 
 def file_list(input_dir, extension):
     flist = []
@@ -28,10 +27,7 @@ def file_list(input_dir, extension):
                 flist.append(os.path.join(root, f))
     return flist
 
-def encode_label(labels):
-    return {l:i for i,l in enumerate(labels)}
-
-def load_label_map():
+def load_file_to_label_map():
     label_map = {}
     csv_data = csv.reader(open(META_FILE))
     row_num = 0
@@ -40,52 +36,39 @@ def load_label_map():
         if row_num == 0:
             tags = row
         else:
-            label_map[row[2]] = row[1]
+            label_map[row[2]] = int(row[1][-1:])
         row_num = row_num + 1
-    encoded_label = encode_label(set(label_map.values()))
-    print "Encoded label: %s" % str(encoded_label)
-    return { f:encoded_label[l] for f, l in label_map.iteritems() }
+    raw_labels = list(set(label_map.values()))
+    encoded_labels = to_categorical(raw_labels)
+    raw_encoded_label_map = {r:e for r,e in zip(raw_labels, encoded_labels)}
+    return { f:raw_encoded_label_map[l] for f, l in label_map.iteritems() }
 
-def select(flist, label_map, n):
+def load_label_to_file_map(flist, label_map):
     inv_map = {}
     for f in flist:
-        k = label_map[os.path.basename(f)]
-        inv_map.setdefault(k, []).append(f)
-    return [v for k in inv_map for v in random.sample(inv_map[k], n) ]
+        label = label_map[os.path.basename(f)]
+        key = np.where(label==1)[0][0]
+        inv_map.setdefault(key, []).append(f)
+    return inv_map
 
-def prepare_train_file_and_labels(sample=False, shuffle=True):
-    label_map = load_label_map()
+def split(label2file, sample_rate):
+    train_data = []
+    validation_data = []
+    for k in label2file:
+        random.shuffle(label2file[k])
+        TRAIN_NUM = int(sample_rate * len(label2file[k]))
+        train_data.extend(label2file[k][0:TRAIN_NUM])
+        validation_data.extend(label2file[k][TRAIN_NUM:])
+    return train_data, validation_data
+
+def prepare_files():
     flist = file_list(TRAIN_DIR, 'jpg')
-    if sample:
-        flist = select(flist, label_map, SAMPLE_SIZE)
-    if shuffle:
-        random.shuffle(flist)
-    labels = [label_map[os.path.basename(f)] for f in flist]
-    labels = to_categorical(labels)
-    return [(f,l) for f,l in zip(flist, labels)]
-
-def epochs(inputs):
-    for i in range(NUM_EPOCHS_PER_DECAY):
-        print 'Epoch %d/%d' % (i, NUM_EPOCHS_PER_DECAY)
-        images = np.asarray([read_image(f) for (f,l) in inputs])
-        labels = np.asarray([l for (f,l) in inputs])
-        yield (images, label)
-
-def batches(epoch):
-    for (images, labels) in range(num_batches_per_epoch):
-        start = i * num_batches_per_epoch
-        end = start + num_batches_per_epoch
-        if cur >= len(epoch):
-            return
-        yield images[start:end], labels[start:end]
-
-def prepare_test_files(sample=False, shuffle=True):
-    flist = file_list(TEST_DIR, 'jpg')
-    if sample:
-        flist = random.sample(flist, SAMPLE_SIZE*3)
-    if shuffle:
-        random.shuffle(flist)
-    return flist
+    file2label = load_file_to_label_map()
+    label2file = load_label_to_file_map(flist, file2label)
+    train_files, validation_files = split(label2file, SAMPLE_RATE)
+    train_labels = [file2label[os.path.basename(f)] for f in train_files]
+    validation_labels = [file2label[os.path.basename(f)] for f in validation_files]
+    return train_files, train_labels, validation_files, validation_labels
 
 def read_image(filename):
     contents = tf.read_file(filename)
@@ -102,16 +85,51 @@ def read_image(filename):
                                                lower=0.2, upper=1.8)
     return distorted_image.eval()
 
-def load_all_training_images():
-    if os.path.isfile('sample.pickle'):
-        with open('sample.pickle') as f:
-            images, labels = pickle.load(f)
-            return np.asarray(images), np.asarray(labels)
+def read_images(filenames):
+    images = []
+    total = len(filenames)
+    for i, filename in enumerate(filenames):
+        images.append(read_image(filename))
+        if i % 100 == 0:
+            print '    %%%.2f completed' % (i/float(total))
+    return images
 
-    train_inputs = prepare_train_file_and_labels(sample=True)
-    print 'Reading from %d files...' % len(train_inputs)
-    images = [read_image(f) for (f,l) in train_inputs]
-    labels = [l for (f,l) in train_inputs]
-    with open('sample.pickle', 'w+') as f:
-        pickle.dump([images, labels], f)
-    return images, labels
+def load_train_data():
+    if os.path.isfile('train_data.npz') and os.path.isfile('validation_data.npz'):
+        print 'Loading training files from file'
+        npzfile = np.load('train_data.npz')
+        X_train, Y_train = npzfile['arr_0'], npzfile['arr_1']
+        print '(%d, %d) files/labels loaded' % (len(X_train), len(Y_train))
+
+        print 'Loading validation files from file'
+        npzfile = np.load('validation_data.npz')
+        X_validation, Y_validation = npzfile['arr_0'], npzfile['arr_1']
+        print '(%d, %d) files/labels loaded' % (len(X_validation), len(Y_validation))
+        return X_train, Y_train, X_validation, Y_validation
+
+    train_files, train_labels, validation_files, validation_labels = prepare_files()
+    print 'Loading training files, %d in total' % len(train_files)
+    train_data = read_images(train_files)
+    print 'Loading validation files, %d in total' % len(validation_files)
+    validation_data = read_images(validation_files)
+
+    X_train = np.asarray(train_data)
+    Y_train = np.asarray(train_labels)
+    X_validation = np.asarray(validation_data)
+    Y_validation = np.asarray(validation_labels)
+
+    with open('train_data.npz', 'w+') as f:
+        np.savez_compressed(f, X_train, Y_train)
+    with open('validation_data.npz', 'w+') as f:
+        np.savez_compressed(f, X_validation, Y_validation)
+
+    return X_train, Y_train, X_validation, Y_validation
+
+if __name__ == '__main__':
+    sess = tf.Session()
+    K.set_session(sess)
+    init = tf.initialize_all_variables()
+    sess.run(init)
+
+    with sess.as_default():
+        load_train_data()

@@ -11,6 +11,17 @@ tf.app.flags.DEFINE_string('train_dir', '/tmp/cnn_train',
 INITIAL_LEARNING_RATE = 0.005
 LEARNING_RATE_DECAY_FACTOR = 0.1
 
+num_batches_per_epoch = NUM_EXAMPLES_PER_EPOCH_FOR_TRAIN / BATCH_SIZE
+decay_steps = int(num_batches_per_epoch * NUM_EPOCHS_PER_DECAY)
+
+def batches(epoch):
+    for (images, labels) in range(num_batches_per_epoch):
+        start = i * num_batches_per_epoch
+        end = start + num_batches_per_epoch
+        if cur >= len(epoch):
+            return
+        yield images[start:end], labels[start:end]
+
 def train():
     global_step = tf.Variable(0, trainable=False)
     img = tf.placeholder(tf.float32, shape=(None, 120, 160, 3))

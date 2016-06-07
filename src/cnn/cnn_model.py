@@ -4,13 +4,11 @@ from keras.layers.core import Flatten, Dense, Dropout
 from keras.layers.convolutional import Convolution2D, MaxPooling2D, ZeroPadding2D
 from keras.layers.normalization import BatchNormalization
 from keras.optimizers import SGD, Adam
-from keras import backend as K
-from keras.preprocessing.image import ImageDataGenerator
-import cv2, numpy as np
+import numpy as np
 import h5py
 import os
-from cnn_input import load_all_training_images
-from keras.utils.np_utils import to_categorical
+from cnn_input import load_data
+from keras import backend as K
 import tensorflow as tf
 
 PRETRAINED_WEIGHT_PATH = './models/cnn4_weight.h5'
@@ -59,7 +57,7 @@ if __name__ == "__main__":
         model.compile(optimizer=sgd, loss='categorical_crossentropy', metrics=["accuracy"])
 
         print "Loading Data..."
-        X_train, Y_train = load_all_training_images()
+        X_train, Y_train = load_data()
 
         print "Training Model...\n"
         model.fit(X_train, Y_train, batch_size=128, nb_epoch=200)
