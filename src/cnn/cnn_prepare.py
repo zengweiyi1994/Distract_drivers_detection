@@ -8,6 +8,10 @@ TRAIN_DIR = './dataset/train'
 TEST_DIR = './dataset/test'
 META_FILE = './dataset/driver_imgs_list.csv'
 
+'''
+'''
+SAMPLE_SIZE = 20
+
 def file_list(input_dir, extension):
     flist = []
     for root, dirs, files in os.walk(input_dir):
@@ -41,16 +45,23 @@ def select(flist, label_map, n):
         inv_map.setdefault(k, []).append(f)
     return [v for k in inv_map for v in random.sample(inv_map[k], n) ]
 
-def prepare_train_files(sample=True, n=1000):
+def prepare_train_files(sample=False, shuffle=True):
     label_map = load_label_map()
     flist = file_list(TRAIN_DIR, 'jpg')
-    flist = select(flist, label_map, n) if sample is True else flist
+    if sample:
+        flist = select(flist, label_map, SAMPLE_SIZE)
+    if shuffle:
+        flist = random.shuffle(flist)
     labels = [label_map[os.path.basename(f)] for f in flist]
     return flist, labels
 
-def prepare_test_files(sample=True, n=3000):
+def prepare_test_files(sample=False, shuffle=True):
     flist = file_list(TEST_DIR, 'jpg')
-    return random.sample(flist, n)
+    if sample:
+        flist = random.sample(flist, SAMPLE_SIZE*3)
+    if shuffle:
+        flist = random.shuffle(flist)
+    return flist
 
 if __name__ == '__main__':
     print 'Load training data...'
