@@ -57,10 +57,13 @@ if __name__ == "__main__":
         model.compile(optimizer=sgd, loss='categorical_crossentropy', metrics=["accuracy"])
 
         print "Loading Data..."
-        X_train, Y_train = load_data()
+        X_train, Y_train, X_validation, Y_validation = load_train_data()
 
         print "Training Model...\n"
         model.fit(X_train, Y_train, batch_size=128, nb_epoch=200)
 
         print "Saving Weight...\n"
         model.save_weights('cnn4_weight.h5')
+
+        print "Validating...\n"
+        model.evaluate(X_validation, Y_validation)
