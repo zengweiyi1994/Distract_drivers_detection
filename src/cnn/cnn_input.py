@@ -91,7 +91,7 @@ def read_images(filenames):
     for i, filename in enumerate(filenames):
         images.append(read_image(filename))
         if i % 100 == 0:
-            print '    %%%.2f completed' % (i/float(total))
+            print '    %.2f%% completed' % (i * 100/float(total))
     return images
 
 def load_train_data():
