@@ -80,13 +80,14 @@ def read_image(filename):
     return image
 
 def read_images(filenames):
+    total = len(filenames)
     pool = Pool()
     rs = pool.map_async(read_image, filenames)
     pool.close()
     while (True):
         if (rs.ready()): break
         remaining = rs._number_left
-        print "Waiting for", remaining, "tasks to complete..."
+        print '    %.2f%% Completed' % (remaining * 100 / float(total))
         time.sleep(5)
 
 def load_train_data():
