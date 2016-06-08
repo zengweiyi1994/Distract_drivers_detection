@@ -45,7 +45,7 @@ if __name__ == "__main__":
 
     with sess.as_default():
         print "Loading Model...\n"
-        inputs = Input(shape=(120, 160, 3))
+        inputs = Input(shape=(120, 160, 1))
         model = Model(input=inputs, output=load_model(inputs))
         if os.path.isfile(PRETRAINED_WEIGHT_PATH):
             print "Loading Pretrained Weights...\n"

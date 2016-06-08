@@ -1,11 +1,13 @@
 from keras.utils.np_utils import to_categorical
+from multiprocessing import Pool
 import tensorflow as tf
 import numpy as np
 import random
+import time
 import csv
 import cv2
 import os
-import tensorflow as tf
+import glob
 from keras import backend as K
 
 BATCH_SIZE = 64
@@ -14,7 +16,7 @@ IMAGE_WIDTH = 160
 NUM_EPOCHS_PER_DECAY = 5
 NUM_EXAMPLES_PER_EPOCH_FOR_TRAIN = 1000
 
-TRAIN_DIR = './dataset/train'
+TRAIN_DIR = './dataset/test_train'
 TEST_DIR = './dataset/test'
 META_FILE = './dataset/driver_imgs_list.csv'
 SAMPLE_RATE = 0.9
@@ -27,7 +29,7 @@ def file_list(input_dir, extension):
                 flist.append(os.path.join(root, f))
     return flist
 
-def load_file_to_label_map():
+def file_to_label_map():
     label_map = {}
     csv_data = csv.reader(open(META_FILE))
     row_num = 0
@@ -43,60 +45,53 @@ def load_file_to_label_map():
     raw_encoded_label_map = {r:e for r,e in zip(raw_labels, encoded_labels)}
     return { f:raw_encoded_label_map[l] for f, l in label_map.iteritems() }
 
-def load_label_to_file_map(flist, label_map):
-    inv_map = {}
-    for f in flist:
-        label = label_map[os.path.basename(f)]
-        key = np.where(label==1)[0][0]
-        inv_map.setdefault(key, []).append(f)
-    return inv_map
-
-def split(label2file, sample_rate):
-    train_data = []
-    validation_data = []
-    for k in label2file:
-        random.shuffle(label2file[k])
-        TRAIN_NUM = int(sample_rate * len(label2file[k]))
-        train_data.extend(label2file[k][0:TRAIN_NUM])
-        validation_data.extend(label2file[k][TRAIN_NUM:])
-    return train_data, validation_data
-
 def prepare_files():
-    flist = file_list(TRAIN_DIR, 'jpg')
-    file2label = load_file_to_label_map()
-    label2file = load_label_to_file_map(flist, file2label)
-    train_files, validation_files = split(label2file, SAMPLE_RATE)
+    file2label = file_to_label_map()
+    train_files = []
+    validation_files = []
+    for d in os.listdir(TRAIN_DIR):
+        filelist = glob.glob(os.path.join(TRAIN_DIR, d) + '/*.jpg')
+        random.shuffle(filelist)
+        TRAIN_NUM = int(SAMPLE_RATE * len(filelist))
+        train_files.extend(filelist[0:TRAIN_NUM])
+        validation_files.extend(filelist[TRAIN_NUM:])
+
+    random.shuffle(train_files)
+    random.shuffle(validation_files)
     train_labels = [file2label[os.path.basename(f)] for f in train_files]
     validation_labels = [file2label[os.path.basename(f)] for f in validation_files]
     return train_files, train_labels, validation_files, validation_labels
 
 def read_image(filename):
-    contents = tf.read_file(filename)
-    image = tf.image.decode_jpeg(contents, channels=3)
-    image.set_shape([480, 640, 3])
-    reshaped_image = tf.cast(image, tf.float32)
-    resized_image = tf.image.resize_image_with_crop_or_pad(reshaped_image,
-                                                          IMAGE_WIDTH, IMAGE_HEIGHT)
-    #   float_image = tf.image.per_image_whitening(resized_image)
-    distorted_image = tf.random_crop(reshaped_image, [IMAGE_HEIGHT, IMAGE_WIDTH, 3])
-    distorted_image = tf.image.random_brightness(distorted_image,
-                                                 max_delta=63)
-    distorted_image = tf.image.random_contrast(distorted_image,
-                                               lower=0.2, upper=1.8)
-    return distorted_image.eval()
+    image = cv2.imread(filename, 0)
+    image = cv2.resize(image, (120, 160))
+#    image = tf.image.decode_jpeg(contents, channels=1)
+#    image.set_shape([480, 640, 1])
+#    reshaped_image = tf.cast(image, tf.float32)
+#    resized_image = tf.image.resize_image_with_crop_or_pad(reshaped_image,
+#                                                          IMAGE_WIDTH, IMAGE_HEIGHT)
+#    #   float_image = tf.image.per_image_whitening(resized_image)
+#    distorted_image = tf.random_crop(reshaped_image, [IMAGE_HEIGHT, IMAGE_WIDTH, 1])
+#    distorted_image = tf.image.random_brightness(distorted_image,
+#                                                 max_delta=63)
+#    distorted_image = tf.image.random_contrast(distorted_image,
+#                                               lower=0.2, upper=1.8)
+#    return distorted_image.eval()
+    return image
 
 def read_images(filenames):
-    images = []
-    total = len(filenames)
-    for i, filename in enumerate(filenames):
-        images.append(read_image(filename))
-        if i % 100 == 0:
-            print '    %.2f%% completed' % (i * 100/float(total))
-    return images
+    pool = Pool()
+    rs = pool.map_async(read_image, filenames)
+    pool.close()
+    while (True):
+        if (rs.ready()): break
+        remaining = rs._number_left
+        print "Waiting for", remaining, "tasks to complete..."
+        time.sleep(5)
 
 def load_train_data():
     if os.path.isfile('train_data.npz') and os.path.isfile('validation_data.npz'):
-        print 'Loading training files from file'
+        print 'Loading training data from file ...'
         npzfile = np.load('train_data.npz')
         X_train, Y_train = npzfile['arr_0'], npzfile['arr_1']
         print '(%d, %d) files/labels loaded' % (len(X_train), len(Y_train))
